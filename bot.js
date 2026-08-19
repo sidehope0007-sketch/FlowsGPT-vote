@@ -63,7 +63,7 @@ bot.start(async (ctx) => {
     }
     
     return ctx.reply(
-      "⭐️ ကျေးဇူးပြု၍ Character ၅ ခု တိတိ ရွေးချယ်ပေးပါ။ ၅ ခု ပြည့်မှ Submit ခလုတ် ပေါ်လာပါမည်။",
+      "⭐️ ကျေးဇူးပြု၍ Character ၅ ခု တိတိ ရွေးချယ်ပေးပါ။ ၅ ခု ပြည့်မှ Submit ခလုတ် ပေါ်လာပါမည်。",
       getVoteKeyboard([])
     );
   }
@@ -71,7 +71,6 @@ bot.start(async (ctx) => {
 
 // Admin က Channel မှာ /sendpoll လို့ ရိုက်ပြီး Vote တောင်းတဲ့အခါ
 bot.command('sendpoll', async (ctx) => {
-  // Option: ကိုယ့် Channel/Group ရဲ့ Admin တွေပဲ သုံးခွင့်ပေးချင်ရင် userId စစ်ပါ။
   const botInfo = await bot.telegram.getMe();
   const botUsername = botInfo.username;
   
@@ -82,6 +81,29 @@ bot.command('sendpoll', async (ctx) => {
   ctx.reply("📢 **Character Vote စတင်ပါပြီ!**\n\nမိမိနှစ်သက်ရာ Character (၅) ခုကို ရွေးချယ်နိုင်ပါပြီ။ မဲပေးရန် အောက်ပါ ခလုတ်ကို နှိပ်ပြီး ဝင်ရောက်ရွေးချယ်ပါ။", 
     { parse_mode: 'Markdown', ...keyboard }
   );
+});
+
+// ----------------------------------------------------
+// [ADMIN COMMAND]: Global Reset Feature
+// ----------------------------------------------------
+bot.command('reset', async (ctx) => {
+  const adminId = process.env.ADMIN_ID;
+  const userId = ctx.from.id.toString();
+
+  // Authorization Check (Admin သာလျှင် လုပ်ပိုင်ခွင့်ရှိသည်)
+  if (userId !== adminId) {
+    // Hacker/Spammer များ Command ရှိမှန်း မသိစေရန် ဘာမှ ပြန်မပြောဘဲ တိတ်တိတ်လေး လျစ်လျူရှုမည်
+    return;
+  }
+
+  // Execution - Database ရှင်းလင်းခြင်း
+  const result = await db.resetAllVotes();
+  
+  if (!result.success) {
+    return ctx.reply("❌ Database Error: မဲစာရင်း ဖျက်ရာတွင် အခက်အခဲရှိနေပါသည်။ နောက်တစ်ကြိမ် ပြန်စမ်းကြည့်ပါ။");
+  }
+
+  return ctx.reply("✅ မဲစာရင်းအားလုံးကို အောင်မြင်စွာ ရှင်းလင်းပြီးပါပြီ။ ယခုမှစ၍ အားလုံး အစမှ ပြန်လည်မဲပေးနိုင်ပါပြီ။");
 });
 
 // မဲခလုတ်တစ်ခုချင်းစီကို နှိပ်တဲ့အခါ (Stateless Callback)
