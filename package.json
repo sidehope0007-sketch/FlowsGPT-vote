@@ -1,15 +1,13 @@
 {
   "name": "telegram-vote-bot",
   "version": "1.0.0",
+  "description": "Stateless Telegram Voting Bot with Supabase",
+  "main": "index.js",
   "engines": {
-    "node": ">=18.0.0" },
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "start": "node index.js"
-  }
-  "description": "Stateless Telegram Voting Bot with Supabase",
-  "main": "src/index.js",
-  "scripts": {
-    "start": "node src/index.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.3",
