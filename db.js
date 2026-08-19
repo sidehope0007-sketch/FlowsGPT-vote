@@ -43,4 +43,21 @@ async function getAllVotes() {
   return data;
 }
 
-module.exports = { hasUserVoted, saveVote, getAllVotes };
+/**
+ * [SECURITY: DANGER ZONE]
+ * Database ထဲရှိ Vote Data အားလုံးကို ရှင်းလင်းမည့် Function
+ */
+async function resetAllVotes() {
+  const { error } = await supabase
+    .from('votes')
+    .delete()
+    .not('user_id', 'is', null); // user_id ရှိသော Row အားလုံးကို ဖျက်မည်
+  
+  if (error) {
+    console.error("DB Error resetting votes:", error);
+  }
+  
+  return { success: !error, error };
+}
+
+module.exports = { hasUserVoted, saveVote, getAllVotes, resetAllVotes };
