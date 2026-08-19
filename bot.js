@@ -6,7 +6,7 @@ require('dotenv').config();
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
-// State string "1,4,10" ကို Array [1, 4, 10] အဖြစ်ပြောင်းပေးမည့် Helper
+// State string "1,4,10" ကို Array [1, 4, 10] အဖြစ်ပြောင်းပေးမည့် Helper Function
 const parseState = (stateStr) => {
   if (!stateStr) return [];
   return stateStr.split(',').map(Number);
@@ -38,7 +38,7 @@ const getVoteKeyboard = (selectedIdxs) => {
     buttons.push(row);
   }
 
-  // ၅ ခု ပြည့်မှ Submit ခလုတ်ပြမည်
+  // ၅ ခု ပြည့်မှသာ Submit Vote ခလုတ်ကို ပြသမည်
   if (selectedIdxs.length === 5) {
     buttons.push([Markup.button.callback('✅ Submit Vote', `s:${selectedIdxs.join(',')}`)]);
   } else {
@@ -48,9 +48,13 @@ const getVoteKeyboard = (selectedIdxs) => {
   return Markup.inlineKeyboard(buttons);
 };
 
-// User က /start vote လို့ Bot ရဲ့ DM မှာ လာရိုက်တဲ့အခါ
+// ----------------------------------------------------
+// [USER COMMANDS]
+// ----------------------------------------------------
+
+// User က Vote ပေးရန် Bot ၏ Private Chat သို့ ဝင်လာသောအခါ
 bot.start(async (ctx) => {
-  const payload = ctx.payload; // gets string after /start
+  const payload = ctx.payload; // get the string after /start
   if (payload === 'vote' || ctx.chat.type === 'private') {
     const userId = ctx.from.id;
     const hasVoted = await db.hasUserVoted(userId);
@@ -63,13 +67,17 @@ bot.start(async (ctx) => {
     }
     
     return ctx.reply(
-      "⭐️ ကျေးဇူးပြု၍ Character ၅ ခု တိတိ ရွေးချယ်ပေးပါ။ ၅ ခု ပြည့်မှ Submit ခလုတ် ပေါ်လာပါမည်。",
+      "⭐️ ကျေးဇူးပြု၍ Character ၅ ခု တိတိ ရွေးချယ်ပေးပါ။ ၅ ခု ပြည့်မှ Submit ခလုတ် ပေါ်လာပါမည်။",
       getVoteKeyboard([])
     );
   }
 });
 
-// Admin က Channel မှာ /sendpoll လို့ ရိုက်ပြီး Vote တောင်းတဲ့အခါ
+// ----------------------------------------------------
+// [ADMIN COMMANDS]
+// ----------------------------------------------------
+
+// Admin မှ Channel အတွင်း Vote Post တင်ရန်
 bot.command('sendpoll', async (ctx) => {
   const botInfo = await bot.telegram.getMe();
   const botUsername = botInfo.username;
@@ -83,20 +91,14 @@ bot.command('sendpoll', async (ctx) => {
   );
 });
 
-// ----------------------------------------------------
-// [ADMIN COMMAND]: Global Reset Feature
-// ----------------------------------------------------
+// Admin မှ မဲစာရင်းအားလုံးကို ဖျက်ပစ်ပြီး အသစ်ပြန်စရန် (Global Reset)
 bot.command('reset', async (ctx) => {
   const adminId = process.env.ADMIN_ID;
   const userId = ctx.from.id.toString();
 
-  // Authorization Check (Admin သာလျှင် လုပ်ပိုင်ခွင့်ရှိသည်)
-  if (userId !== adminId) {
-    // Hacker/Spammer များ Command ရှိမှန်း မသိစေရန် ဘာမှ ပြန်မပြောဘဲ တိတ်တိတ်လေး လျစ်လျူရှုမည်
-    return;
-  }
+  // Security Check: Admin မဟုတ်ပါက မသိချင်ယောင်ဆောင်မည် (Silent Ignore)
+  if (userId !== adminId) return;
 
-  // Execution - Database ရှင်းလင်းခြင်း
   const result = await db.resetAllVotes();
   
   if (!result.success) {
@@ -106,7 +108,25 @@ bot.command('reset', async (ctx) => {
   return ctx.reply("✅ မဲစာရင်းအားလုံးကို အောင်မြင်စွာ ရှင်းလင်းပြီးပါပြီ။ ယခုမှစ၍ အားလုံး အစမှ ပြန်လည်မဲပေးနိုင်ပါပြီ။");
 });
 
-// မဲခလုတ်တစ်ခုချင်းစီကို နှိပ်တဲ့အခါ (Stateless Callback)
+// Admin မှ လက်ရှိမဲရလဒ်များကို အချိန်မရွေး စစ်ဆေးရန် (Live Result Check)
+bot.command('result', async (ctx) => {
+  const adminId = process.env.ADMIN_ID;
+  const userId = ctx.from.id.toString();
+
+  // Security Check: Admin မဟုတ်ပါက မသိချင်ယောင်ဆောင်မည် (Silent Ignore)
+  if (userId !== adminId) return;
+
+  const votesData = await db.getAllVotes();
+  const resultMsg = formatVoteResults(votesData);
+  
+  return ctx.replyWithMarkdown(resultMsg);
+});
+
+// ----------------------------------------------------
+// [ACTION HANDLERS]
+// ----------------------------------------------------
+
+// Character ခလုတ်တစ်ခုချင်းစီကို နှိပ်သောအခါ
 bot.action(/^v:(.*)$/, async (ctx) => {
   const stateStr = ctx.match[1];
   const selectedIdxs = parseState(stateStr);
@@ -115,22 +135,22 @@ bot.action(/^v:(.*)$/, async (ctx) => {
     await ctx.editMessageReplyMarkup(getVoteKeyboard(selectedIdxs).reply_markup);
     await ctx.answerCbQuery();
   } catch (err) {
-    // Message unchanged error ကို လျစ်လျူရှုရန်
+    // Message မပြောင်းလဲဘဲ ထပ်နှိပ်မိသော Error များကို လျစ်လျူရှုရန်
     await ctx.answerCbQuery("ရွေးချယ်ပြီးဖြစ်ပါသည်။").catch(()=>console.log("Cb Error"));
   }
 });
 
-// ၅ ခုမပြည့်သေးဘဲ သတိပေးခလုတ် နှိပ်မိတဲ့အခါ
+// ၅ ခုမပြည့်သေးဘဲ သတိပေးခလုတ် (⏳) နှိပ်မိသောအခါ
 bot.action('noop', async (ctx) => {
   await ctx.answerCbQuery("❗️ စုစုပေါင်း ၅ ခု တိတိ ရွေးချယ်ပေးရပါမည်။", { show_alert: true });
 });
 
-// Submit Vote ခလုတ်နှိပ်တဲ့အခါ
+// ၅ ခုပြည့်၍ Submit Vote ခလုတ်နှိပ်သောအခါ
 bot.action(/^s:(.*)$/, async (ctx) => {
   const stateStr = ctx.match[1];
   const selectedIdxs = parseState(stateStr);
   
-  // Security Validation: 5 ခု တိတိဟုတ်မဟုတ် Server side က ထပ်စစ်သည်
+  // Security Validation: 5 ခု တိတိ ဟုတ်/မဟုတ် Server Side မှ ထပ်မံစစ်ဆေးခြင်း
   if (selectedIdxs.length !== 5) {
     return ctx.answerCbQuery("❗️ ၅ ခု တိတိ ရွေးချယ်ရပါမည်။ System error.", { show_alert: true });
   }
@@ -138,14 +158,14 @@ bot.action(/^s:(.*)$/, async (ctx) => {
   const userId = ctx.from.id;
   const username = ctx.from.username || ctx.from.first_name;
 
-  // DB တွင် စစ်ဆေးခြင်း
+  // Database တွင် မဲပေးပြီးသား ဟုတ်/မဟုတ် စစ်ဆေးခြင်း
   const hasVoted = await db.hasUserVoted(userId);
   if (hasVoted) {
     await ctx.answerCbQuery("သင်သည် မဲပေးပြီးဖြစ်ပါသည်။", { show_alert: true });
     return ctx.editMessageText("❌ သင်သည် မဲပေးပြီးဖြစ်ပါသည်။");
   }
 
-  // Database ထဲသို့ သိမ်းခြင်း
+  // Database ထဲသို့ မဲဒေတာ သိမ်းဆည်းခြင်း
   const result = await db.saveVote(userId, username, selectedIdxs);
   if (!result.success) {
     console.error(result.error);
@@ -154,15 +174,18 @@ bot.action(/^s:(.*)$/, async (ctx) => {
 
   await ctx.answerCbQuery("✅ မဲပေးခြင်း အောင်မြင်ပါသည်။ ကျေးဇူးတင်ပါတယ်။", { show_alert: true });
 
-  // Update Message with Results
+  // Update Message with Current Live Results
   const votesData = await db.getAllVotes();
   const resultMsg = formatVoteResults(votesData);
   
   await ctx.editMessageText(resultMsg, { parse_mode: 'Markdown' });
 });
 
+// ----------------------------------------------------
+// [ERROR HANDLING]
+// ----------------------------------------------------
 bot.catch((err, ctx) => {
-  console.error(`Bot Error for ${ctx.updateType}`, err);
+  console.error(`Bot Error for ${ctx.updateType}:`, err);
 });
 
 module.exports = bot;
