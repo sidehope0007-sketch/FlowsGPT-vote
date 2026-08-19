@@ -16,7 +16,6 @@ const parseState = (stateStr) => {
 const getVoteKeyboard = (selectedIdxs) => {
   const buttons = [];
   
-  // ၂ ခု တစ်တန်းစီ ထည့်သွင်းခြင်း
   for (let i = 0; i < characters.length; i += 2) {
     const row = [];
     
@@ -52,9 +51,8 @@ const getVoteKeyboard = (selectedIdxs) => {
 // [USER COMMANDS]
 // ----------------------------------------------------
 
-// User က Vote ပေးရန် Bot ၏ Private Chat သို့ ဝင်လာသောအခါ
 bot.start(async (ctx) => {
-  const payload = ctx.payload; // get the string after /start
+  const payload = ctx.payload; 
   if (payload === 'vote' || ctx.chat.type === 'private') {
     const userId = ctx.from.id;
     const hasVoted = await db.hasUserVoted(userId);
@@ -77,8 +75,21 @@ bot.start(async (ctx) => {
 // [ADMIN COMMANDS]
 // ----------------------------------------------------
 
-// Admin မှ Channel အတွင်း Vote Post တင်ရန်
+// [UPDATED] Admin မှ Bot ၏ DM တွင် Command ရိုက်၍ Channel သို့ Vote Post လှမ်းတင်ရန်
 bot.command('sendpoll', async (ctx) => {
+  const adminId = process.env.ADMIN_ID;
+  const userId = ctx.from.id.toString();
+
+  // 1. Authorization: Admin မဟုတ်ပါက လျစ်လျူရှုမည်
+  if (userId !== adminId) return;
+
+  // 2. Target Channel Validation
+  const targetChannel = ctx.payload.trim(); // ctx.payload သည် /sendpoll နောက်မှ စာသားကို ယူပေးသည်
+  if (!targetChannel) {
+    return ctx.reply("❗️ Channel အမည် (Username) ထည့်သွင်းရန် လိုအပ်ပါသည်။\n\nဥပမာ - `/sendpoll @your_channel_name`", { parse_mode: 'Markdown' });
+  }
+
+  // 3. Prepare Message & Keyboard
   const botInfo = await bot.telegram.getMe();
   const botUsername = botInfo.username;
   
@@ -86,9 +97,29 @@ bot.command('sendpoll', async (ctx) => {
     Markup.button.url('🗳️ မဲပေးရန် ဤနေရာကို နှိပ်ပါ', `https://t.me/${botUsername}?start=vote`)
   ]);
 
-  ctx.reply("📢 **Character Vote စတင်ပါပြီ!**\n\nမိမိနှစ်သက်ရာ Character (၅) ခုကို ရွေးချယ်နိုင်ပါပြီ။ မဲပေးရန် အောက်ပါ ခလုတ်ကို နှိပ်ပြီး ဝင်ရောက်ရွေးချယ်ပါ။", 
-    { parse_mode: 'Markdown', ...keyboard }
-  );
+  // 4. Execution & Error Handling
+  try {
+    // Channel သို့ လှမ်း၍ Message ပို့ခြင်း
+    await ctx.telegram.sendMessage(
+      targetChannel,
+      "📢 **Character Vote စတင်ပါပြီ!**\n\nမိမိနှစ်သက်ရာ Character (၅) ခုကို ရွေးချယ်နိုင်ပါပြီ။ မဲပေးရန် အောက်ပါ ခလုတ်ကို နှိပ်ပြီး ဝင်ရောက်ရွေးချယ်ပါ။", 
+      { parse_mode: 'Markdown', ...keyboard }
+    );
+    
+    // ပို့ဆောင်အောင်မြင်ကြောင်း Admin ကို Bot ၏ DM တွင် ပြန်ပြောခြင်း
+    return ctx.reply(`✅ ${targetChannel} သို့ Vote Post အောင်မြင်စွာ တင်ပြီးပါပြီ။`);
+  } catch (error) {
+    console.error("SendPoll Error:", error);
+    
+    // API Errors များကို အတိအကျ ဖမ်းယူ၍ အကြောင်းပြန်ခြင်း
+    if (error.code === 400) {
+      return ctx.reply(`❌ Channel အမည် မှားယွင်းနေပါသည်။ \n"${targetChannel}" သည် Telegram တွင် မရှိပါ။ (@ ပါ/မပါ စစ်ဆေးပါ)`);
+    } else if (error.code === 403) {
+      return ctx.reply(`❌ ခွင့်ပြုချက် မရှိပါ။\nBot သည် ${targetChannel} တွင် Admin အဖြစ် မရှိသေးပါ (သို့) Post တင်ခွင့် ပိတ်ထားပါသည်။`);
+    } else {
+      return ctx.reply("❌ Error ဖြစ်ပွားနေပါသည်။ Logs များကို စစ်ဆေးပါ။");
+    }
+  }
 });
 
 // Admin မှ မဲစာရင်းအားလုံးကို ဖျက်ပစ်ပြီး အသစ်ပြန်စရန် (Global Reset)
@@ -96,15 +127,12 @@ bot.command('reset', async (ctx) => {
   const adminId = process.env.ADMIN_ID;
   const userId = ctx.from.id.toString();
 
-  // Security Check: Admin မဟုတ်ပါက မသိချင်ယောင်ဆောင်မည် (Silent Ignore)
   if (userId !== adminId) return;
 
   const result = await db.resetAllVotes();
-  
   if (!result.success) {
-    return ctx.reply("❌ Database Error: မဲစာရင်း ဖျက်ရာတွင် အခက်အခဲရှိနေပါသည်။ နောက်တစ်ကြိမ် ပြန်စမ်းကြည့်ပါ။");
+    return ctx.reply("❌ Database Error: မဲစာရင်း ဖျက်ရာတွင် အခက်အခဲရှိနေပါသည်။");
   }
-
   return ctx.reply("✅ မဲစာရင်းအားလုံးကို အောင်မြင်စွာ ရှင်းလင်းပြီးပါပြီ။ ယခုမှစ၍ အားလုံး အစမှ ပြန်လည်မဲပေးနိုင်ပါပြီ။");
 });
 
@@ -113,12 +141,10 @@ bot.command('result', async (ctx) => {
   const adminId = process.env.ADMIN_ID;
   const userId = ctx.from.id.toString();
 
-  // Security Check: Admin မဟုတ်ပါက မသိချင်ယောင်ဆောင်မည် (Silent Ignore)
   if (userId !== adminId) return;
 
   const votesData = await db.getAllVotes();
   const resultMsg = formatVoteResults(votesData);
-  
   return ctx.replyWithMarkdown(resultMsg);
 });
 
@@ -126,7 +152,6 @@ bot.command('result', async (ctx) => {
 // [ACTION HANDLERS]
 // ----------------------------------------------------
 
-// Character ခလုတ်တစ်ခုချင်းစီကို နှိပ်သောအခါ
 bot.action(/^v:(.*)$/, async (ctx) => {
   const stateStr = ctx.match[1];
   const selectedIdxs = parseState(stateStr);
@@ -135,22 +160,18 @@ bot.action(/^v:(.*)$/, async (ctx) => {
     await ctx.editMessageReplyMarkup(getVoteKeyboard(selectedIdxs).reply_markup);
     await ctx.answerCbQuery();
   } catch (err) {
-    // Message မပြောင်းလဲဘဲ ထပ်နှိပ်မိသော Error များကို လျစ်လျူရှုရန်
     await ctx.answerCbQuery("ရွေးချယ်ပြီးဖြစ်ပါသည်။").catch(()=>console.log("Cb Error"));
   }
 });
 
-// ၅ ခုမပြည့်သေးဘဲ သတိပေးခလုတ် (⏳) နှိပ်မိသောအခါ
 bot.action('noop', async (ctx) => {
   await ctx.answerCbQuery("❗️ စုစုပေါင်း ၅ ခု တိတိ ရွေးချယ်ပေးရပါမည်။", { show_alert: true });
 });
 
-// ၅ ခုပြည့်၍ Submit Vote ခလုတ်နှိပ်သောအခါ
 bot.action(/^s:(.*)$/, async (ctx) => {
   const stateStr = ctx.match[1];
   const selectedIdxs = parseState(stateStr);
   
-  // Security Validation: 5 ခု တိတိ ဟုတ်/မဟုတ် Server Side မှ ထပ်မံစစ်ဆေးခြင်း
   if (selectedIdxs.length !== 5) {
     return ctx.answerCbQuery("❗️ ၅ ခု တိတိ ရွေးချယ်ရပါမည်။ System error.", { show_alert: true });
   }
@@ -158,32 +179,25 @@ bot.action(/^s:(.*)$/, async (ctx) => {
   const userId = ctx.from.id;
   const username = ctx.from.username || ctx.from.first_name;
 
-  // Database တွင် မဲပေးပြီးသား ဟုတ်/မဟုတ် စစ်ဆေးခြင်း
   const hasVoted = await db.hasUserVoted(userId);
   if (hasVoted) {
     await ctx.answerCbQuery("သင်သည် မဲပေးပြီးဖြစ်ပါသည်။", { show_alert: true });
     return ctx.editMessageText("❌ သင်သည် မဲပေးပြီးဖြစ်ပါသည်။");
   }
 
-  // Database ထဲသို့ မဲဒေတာ သိမ်းဆည်းခြင်း
   const result = await db.saveVote(userId, username, selectedIdxs);
   if (!result.success) {
     console.error(result.error);
-    return ctx.answerCbQuery("မဲပေးရာတွင် အခက်အခဲရှိနေပါသည်။ ခဏနေမှ ထပ်စမ်းကြည့်ပါ။", { show_alert: true });
+    return ctx.answerCbQuery("မဲပေးရာတွင် အခက်အခဲရှိနေပါသည်။", { show_alert: true });
   }
 
   await ctx.answerCbQuery("✅ မဲပေးခြင်း အောင်မြင်ပါသည်။ ကျေးဇူးတင်ပါတယ်။", { show_alert: true });
 
-  // Update Message with Current Live Results
   const votesData = await db.getAllVotes();
   const resultMsg = formatVoteResults(votesData);
-  
   await ctx.editMessageText(resultMsg, { parse_mode: 'Markdown' });
 });
 
-// ----------------------------------------------------
-// [ERROR HANDLING]
-// ----------------------------------------------------
 bot.catch((err, ctx) => {
   console.error(`Bot Error for ${ctx.updateType}:`, err);
 });
